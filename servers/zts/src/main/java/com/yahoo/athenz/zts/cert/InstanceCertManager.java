@@ -18,15 +18,15 @@ import com.yahoo.athenz.zts.InstanceIdentity;
 import com.yahoo.athenz.zts.ZTSConsts;
 
 
-public class InstanceManager {
+public class InstanceCertManager {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(InstanceManager.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(InstanceCertManager.class);
     public static final String JDBC = "jdbc";
 
     private CertRecordStore certStore = null;
     private static String CA_X509_CERTIFICATE = null;
     
-    public InstanceManager(PrivateKeyStore keyStore) {
+    public InstanceCertManager(PrivateKeyStore keyStore) {
         
         // if ZTS configured to issue certificate for services, it can
         // track of serial and instance values to make sure the same
@@ -205,7 +205,7 @@ public class InstanceManager {
         }
         
         if (CA_X509_CERTIFICATE == null) {
-            synchronized (InstanceManager.class) {
+            synchronized (InstanceCertManager.class) {
                 if (CA_X509_CERTIFICATE == null) {
                     CA_X509_CERTIFICATE = certSigner.getCACertificate();
                 }

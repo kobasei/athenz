@@ -13,31 +13,43 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.yahoo.athenz.instance.provider;
+package com.yahoo.athenz.zts;
 
+import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.yahoo.athenz.zts.ZTSConsts;
+import com.yahoo.athenz.instance.provider.InstanceProvider;
+import com.yahoo.athenz.instance.provider.impl.InstanceHttpProvider;
 import com.yahoo.athenz.zts.cache.DataCache;
 import com.yahoo.athenz.zts.store.DataStore;
 
-public class InstanceProvider {
+public class InstanceProviderManager {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(InstanceProvider.class);
-    private static final String HTTPS_SCHEME = "https";
+    private static final Logger LOGGER = LoggerFactory.getLogger(InstanceProviderManager.class);
+    private static final String SCHEME_HTTPS = "https";
+    private static final String SCHEME_CLASS = "class";
 
+    private ConcurrentHashMap<String, Class<?>> classMap;
     private DataStore dataStore;
     private List<String> providerEndpoints = Collections.emptyList();
 
-    public InstanceProvider(DataStore dataStore) {
+    enum ProviderScheme {
+        UNKNOWN,
+        HTTPS,
+        CLASS
+    }
+    
+    public InstanceProviderManager(DataStore dataStore) {
         
         this.dataStore = dataStore;
+        classMap = new ConcurrentHashMap<>();
         
         // get the list of valid provider endpoints
         
@@ -47,7 +59,7 @@ public class InstanceProvider {
         }
     }
     
-    public InstanceProviderClient getProviderClient(String provider) {
+    public InstanceProvider getProvider(String provider) {
         int idx = provider.lastIndexOf('.');
         if (idx == -1) {
             LOGGER.error("getProviderClient: Invalid provider service name: {}", provider);
@@ -93,33 +105,90 @@ public class InstanceProvider {
         // before using our endpoint we need to make sure
         // it's valid according to configuration settings
         
-        if (!verifyProviderEndpoint(providerEndpoint)) {
-            return null;
+        InstanceProvider instanceProvider = null;
+        ProviderScheme schemeType = verifyProviderEndpoint(providerEndpoint);
+        switch (schemeType) {
+        case HTTPS:
+            instanceProvider = new InstanceHttpProvider();
+            break;
+        case CLASS:
+            instanceProvider = getClassInstance(providerEndpoint);
+            break;
+        default:
+            break;
         }
         
-        ProviderHostnameVerifier hostnameVerifier = new ProviderHostnameVerifier(provider);
-        return new InstanceProviderClient(providerEndpoint, hostnameVerifier);
+        if (instanceProvider != null) {
+            instanceProvider.initialize(provider, providerEndpoint);
+        }
+        
+        return instanceProvider;
     }
     
-    boolean verifyProviderEndpoint(String providerEndpoint) {
+    InstanceProvider getClassInstance(String className) {
+        InstanceProvider provider = null;
+        Class<?> instanceClass = classMap.get(className);
+        if (instanceClass == null) {
+            try {
+                instanceClass = Class.forName(className);
+            } catch (ClassNotFoundException e) {
+                LOGGER.error("getClassInstance: Provider class {} not found", className);
+                return null;
+            }
+            classMap.put(className, instanceClass);
+        }
+        if (instanceClass != null) {
+            try {
+                provider = (InstanceProvider) instanceClass.newInstance();
+            } catch (InstantiationException | IllegalAccessException ex) {
+                LOGGER.error("getClassInstance: Unable to get new instance for provider {} error {}",
+                        className, ex.getMessage());
+            }
+        }
+        return provider;
+    }
+    
+    ProviderScheme getProviderScheme(URI uri) {
+        String scheme = uri.getScheme();
+        if (scheme == null) {
+            LOGGER.error("verifyProviderEndpoint: Provider endpoint {} has no scheme component",
+                    uri.toString());
+            return ProviderScheme.UNKNOWN;
+        }
+        
+        ProviderScheme schemeType = ProviderScheme.UNKNOWN;
+        scheme = scheme.toLowerCase();
+        switch (scheme) {
+        case SCHEME_HTTPS:
+            schemeType = ProviderScheme.HTTPS;
+            break;
+        case SCHEME_CLASS:
+            schemeType = ProviderScheme.CLASS;
+            break;
+        }
+        
+        return schemeType;
+    }
+    
+    ProviderScheme verifyProviderEndpoint(String providerEndpoint) {
         
         // verify that we have a valid endpoint that ends in one of our
         // configured domains.
         
-        java.net.URI uri = null;
+        URI uri = null;
         try {
-            uri = new java.net.URI(providerEndpoint);
+            uri = new URI(providerEndpoint);
         } catch (URISyntaxException ex) {
             LOGGER.error("verifyProviderEndpoint: Unable to verify {}: {}", providerEndpoint,
                     ex.getMessage());
-            return false;
+            return ProviderScheme.UNKNOWN;
         }
         
         String host = uri.getHost();
         if (host == null) {
             LOGGER.error("verifyProviderEndpoint: Provider endpoint {} has no host component",
                     providerEndpoint);
-            return false;
+            return ProviderScheme.UNKNOWN;
         }
         host = host.toLowerCase();
         
@@ -127,17 +196,19 @@ public class InstanceProvider {
         if (scheme == null) {
             LOGGER.error("verifyProviderEndpoint: Provider endpoint {} has no scheme component",
                     providerEndpoint);
-            return false;
+            return ProviderScheme.UNKNOWN;
         }
         
-        scheme = scheme.toLowerCase();
-        if (!(HTTPS_SCHEME.equalsIgnoreCase(scheme))) {
-            LOGGER.error("verifyProviderEndpoint: Provider scheme {} is not https", scheme);
-            return false;
+        ProviderScheme schemeType = getProviderScheme(uri);
+        if (schemeType == ProviderScheme.UNKNOWN) {
+            LOGGER.error("verifyProviderEndpoint: Unknown scheme in URI {}", providerEndpoint);
+            return ProviderScheme.UNKNOWN;
         }
         
-        if (providerEndpoints.isEmpty()) {
-            return true;
+        // we only validate endpoints for https requests
+        
+        if (schemeType != ProviderScheme.HTTPS || providerEndpoints.isEmpty()) {
+            return schemeType;
         }
         
         boolean valid = false;
@@ -151,9 +222,9 @@ public class InstanceProvider {
         if (!valid) {
             LOGGER.error("verifyProviderEndpoint: Provider host {} does not match with any of the configured domains",
                     host);
-            return false;
+            return ProviderScheme.UNKNOWN;
         }
 
-        return true;
+        return schemeType;
     }
 }
