@@ -47,8 +47,8 @@ public class InstanceAWSProvider implements InstanceProvider {
     public static final String AWS_PROP_PUBLIC_CERT      = "athenz.zts.aws_public_cert";
     public static final String AWS_PROP_BOOT_TIME_OFFSET = "athenz.zts.aws_boot_time_offset";
     
-    private PublicKey awsPublicKey = null;    // AWS public key for validating instance documents
-    private long bootTimeOffset;
+    PublicKey awsPublicKey = null;      // AWS public key for validating instance documents
+    long bootTimeOffset;                // boot time offset in milliseconds
     
     @Override
     public void initialize(String provider, String providerEndpoint) {
@@ -93,23 +93,16 @@ public class InstanceAWSProvider implements InstanceProvider {
         return true;
     }
     
-    @Override
-    public InstanceConfirmation confirmInstance(InstanceConfirmation confirmation) {
-        
-        AWSAttestationData info = JSON.fromString(confirmation.getAttestationData(), AWSAttestationData.class);
-        
-        final String document = info.getDocument();
-        if (document == null || document.isEmpty()) {
-            throw error("AWS instance document is empty");
-        }
-        
-        final String signature = info.getSignature();
+    public boolean validateAWSSignature(final String document, final String signature) {
+
         if (signature == null || signature.isEmpty()) {
-            throw error("AWS instance document signature is empty");
+            LOGGER.error("AWS instance document signature is empty");
+            return false;
         }
         
         if (awsPublicKey == null) {
-            throw error("AWS Public key is not available");
+            LOGGER.error("AWS Public key is not available");
+            return false;
         }
         
         boolean valid = false;
@@ -120,7 +113,21 @@ public class InstanceAWSProvider implements InstanceProvider {
                      ex.getMessage());
         }
         
-        if (!valid) {
+        return valid;
+    }
+    
+    @Override
+    public InstanceConfirmation confirmInstance(InstanceConfirmation confirmation) {
+        
+        AWSAttestationData info = JSON.fromString(confirmation.getAttestationData(),
+                AWSAttestationData.class);
+        
+        final String document = info.getDocument();
+        if (document == null || document.isEmpty()) {
+            throw error("AWS instance document is empty");
+        }
+        
+        if (!validateAWSSignature(document, info.getSignature())) {
             throw error("AWS Instance document signature mismatch");
         }
         
@@ -128,7 +135,7 @@ public class InstanceAWSProvider implements InstanceProvider {
         
         Struct instanceDocument = null;
         try {
-            instanceDocument = JSON.fromString(info.getDocument(), Struct.class);
+            instanceDocument = JSON.fromString(document, Struct.class);
         } catch (Exception ex) {
             LOGGER.error("verifyInstanceDocument: failed to parse: {} error: {}",
                     info.getDocument(), ex.getMessage());
@@ -140,14 +147,13 @@ public class InstanceAWSProvider implements InstanceProvider {
         
         // verify that the account lookup and the account in the document match
         
-        valid = validateAWSAccount(confirmation.getAttributes(), instanceDocument.getString(ATTR_ACCOUNT_ID));
-        if (!valid) {
+        if (!validateAWSAccount(confirmation.getAttributes(), instanceDocument.getString(ATTR_ACCOUNT_ID))) {
             throw error("Unable to validate registered AWS account id in Athenz");
         }
         
         // verify that the boot up time for the instance is now
 
-        Timestamp bootTime = instanceDocument.getTimestamp(ATTR_PENDING_TIME);
+        Timestamp bootTime = Timestamp.fromMillis(Long.valueOf(instanceDocument.getString(ATTR_PENDING_TIME)));
         if (bootTime.millis() < System.currentTimeMillis() - bootTimeOffset) {
             throw error("Instance boot time is not recent enough");
         }
@@ -196,7 +202,7 @@ public class InstanceAWSProvider implements InstanceProvider {
         return new AWSSecurityTokenServiceClient(creds);
     }
     
-    boolean verifyInstanceIdentity(AWSAttestationData info) {
+    public boolean verifyInstanceIdentity(AWSAttestationData info) {
 
         StringBuilder serviceBuilder = new StringBuilder(256);
         serviceBuilder.append(info.getDomain()).append('.').append(info.getService());
