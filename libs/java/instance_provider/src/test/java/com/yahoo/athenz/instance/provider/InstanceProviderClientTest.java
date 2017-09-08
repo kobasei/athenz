@@ -105,4 +105,37 @@ public class InstanceProviderClientTest {
         
         provClient.close();
     }
+    
+    @Test
+    public void testInstanceProviderClientFailure() {
+        String url = "http://localhost:10099/instance";
+        InstanceProviderClient provClient = new InstanceProviderClient(url);
+        provClient.setProperty("prop-name", "prop-value");
+        
+        WebTarget base = Mockito.mock(WebTarget.class);
+        provClient.base = base;
+        
+        WebTarget target = Mockito.mock(WebTarget.class);
+        Mockito.when(base.path("/instance")).thenReturn(target);
+
+        Invocation.Builder builder = Mockito.mock(Invocation.Builder.class);
+        Mockito.when(target.request("application/json")).thenReturn(builder);
+
+        InstanceConfirmation confirmation = new InstanceConfirmation()
+                .setAttestationData("data").setDomain("athenz")
+                .setProvider("provider").setService("service");
+        Entity<?> entity = Entity.entity(confirmation, "application/json");
+        Response response = Mockito.mock(Response.class);
+        Mockito.when(builder.post(entity)).thenReturn(response);
+        Mockito.when(response.getStatus()).thenReturn(401);
+
+        try {
+            provClient.postInstanceConfirmation(confirmation);
+            fail();
+        } catch (ResourceException ex) {
+            assertEquals(ex.getCode(), 401);
+        }
+        
+        provClient.close();
+    }
 }

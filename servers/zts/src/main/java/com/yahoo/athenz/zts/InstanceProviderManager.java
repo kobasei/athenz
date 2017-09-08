@@ -38,7 +38,7 @@ public class InstanceProviderManager {
 
     private ConcurrentHashMap<String, Class<?>> classMap;
     private DataStore dataStore;
-    private List<String> providerEndpoints = Collections.emptyList();
+    List<String> providerEndpoints = Collections.emptyList();
 
     enum ProviderScheme {
         UNKNOWN,
@@ -106,13 +106,22 @@ public class InstanceProviderManager {
         // it's valid according to configuration settings
         
         InstanceProvider instanceProvider = null;
-        ProviderScheme schemeType = verifyProviderEndpoint(providerEndpoint);
+        URI uri = null;
+        try {
+            uri = new URI(providerEndpoint);
+        } catch (URISyntaxException ex) {
+            LOGGER.error("getProviderClient: Unable to parse {}: {}", providerEndpoint,
+                    ex.getMessage());
+            return null;
+        }
+        
+        ProviderScheme schemeType = getProviderEndpointScheme(uri);
         switch (schemeType) {
         case HTTPS:
             instanceProvider = new InstanceHttpProvider();
             break;
         case CLASS:
-            instanceProvider = getClassInstance(providerEndpoint);
+            instanceProvider = getClassInstance(uri.getHost());
             break;
         default:
             break;
@@ -137,13 +146,11 @@ public class InstanceProviderManager {
             }
             classMap.put(className, instanceClass);
         }
-        if (instanceClass != null) {
-            try {
-                provider = (InstanceProvider) instanceClass.newInstance();
-            } catch (InstantiationException | IllegalAccessException ex) {
-                LOGGER.error("getClassInstance: Unable to get new instance for provider {} error {}",
-                        className, ex.getMessage());
-            }
+        try {
+            provider = (InstanceProvider) instanceClass.newInstance();
+        } catch (InstantiationException | IllegalAccessException ex) {
+            LOGGER.error("getClassInstance: Unable to get new instance for provider {} error {}",
+                    className, ex.getMessage());
         }
         return provider;
     }
@@ -170,24 +177,30 @@ public class InstanceProviderManager {
         return schemeType;
     }
     
-    ProviderScheme verifyProviderEndpoint(String providerEndpoint) {
+    boolean verifyProviderEndpoint(String host) {
+        
+        if (providerEndpoints.isEmpty()) {
+            return true;
+        }
+        
+        for (String endpoint : providerEndpoints) {
+            if (host.endsWith(endpoint)) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
+    ProviderScheme getProviderEndpointScheme(URI uri) {
         
         // verify that we have a valid endpoint that ends in one of our
         // configured domains.
         
-        URI uri = null;
-        try {
-            uri = new URI(providerEndpoint);
-        } catch (URISyntaxException ex) {
-            LOGGER.error("verifyProviderEndpoint: Unable to verify {}: {}", providerEndpoint,
-                    ex.getMessage());
-            return ProviderScheme.UNKNOWN;
-        }
-        
         String host = uri.getHost();
         if (host == null) {
             LOGGER.error("verifyProviderEndpoint: Provider endpoint {} has no host component",
-                    providerEndpoint);
+                    uri.toString());
             return ProviderScheme.UNKNOWN;
         }
         host = host.toLowerCase();
@@ -195,31 +208,23 @@ public class InstanceProviderManager {
         String scheme = uri.getScheme();
         if (scheme == null) {
             LOGGER.error("verifyProviderEndpoint: Provider endpoint {} has no scheme component",
-                    providerEndpoint);
+                    uri.toString());
             return ProviderScheme.UNKNOWN;
         }
         
         ProviderScheme schemeType = getProviderScheme(uri);
         if (schemeType == ProviderScheme.UNKNOWN) {
-            LOGGER.error("verifyProviderEndpoint: Unknown scheme in URI {}", providerEndpoint);
+            LOGGER.error("verifyProviderEndpoint: Unknown scheme in URI {}", uri.toString());
             return ProviderScheme.UNKNOWN;
         }
         
         // we only validate endpoints for https requests
         
-        if (schemeType != ProviderScheme.HTTPS || providerEndpoints.isEmpty()) {
+        if (schemeType != ProviderScheme.HTTPS) {
             return schemeType;
         }
         
-        boolean valid = false;
-        for (String endpoint : providerEndpoints) {
-            valid = host.endsWith(endpoint);
-            if (valid) {
-                break;
-            }
-        }
-        
-        if (!valid) {
+        if (!verifyProviderEndpoint(host)) {
             LOGGER.error("verifyProviderEndpoint: Provider host {} does not match with any of the configured domains",
                     host);
             return ProviderScheme.UNKNOWN;

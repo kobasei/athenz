@@ -256,4 +256,42 @@ public class InstanceAWSProviderTest {
         InstanceConfirmation result = provider.confirmInstance(confirmation);
         assertEquals(result.getDomain(), "athenz");
     }
+    
+    @Test
+    public void testInstanceClient() {
+        
+        InstanceAWSProvider provider = new InstanceAWSProvider();
+        AWSAttestationData data = new AWSAttestationData();
+        
+        // first with null and empty access point
+        
+        data.setAccess(null);
+        assertNull(provider.getInstanceClient(data));
+        
+        data.setAccess("");
+        assertNull(provider.getInstanceClient(data));
+
+        // null and empty secret
+        
+        data.setAccess("access");
+        
+        data.setSecret(null);
+        assertNull(provider.getInstanceClient(data));
+        
+        data.setSecret("");
+        assertNull(provider.getInstanceClient(data));
+        
+        // null and empty token
+        
+        data.setSecret("secret");
+        
+        data.setToken(null);
+        assertNull(provider.getInstanceClient(data));
+        
+        data.setToken("");
+        assertNull(provider.getInstanceClient(data));
+        
+        data.setToken("valid");
+        assertNotNull(provider.getInstanceClient(data));
+    }
 }

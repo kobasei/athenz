@@ -52,4 +52,14 @@ public class ProviderHostnameVerifierTest {
         ProviderHostnameVerifier verifier2 = new ProviderHostnameVerifier("athenz.production2");
         assertFalse(verifier2.verify("athenz", session));
     }
+    
+    @Test
+    public void testHostnameVerifierNullCerts() throws IOException {
+        
+        SSLSession session = Mockito.mock(SSLSession.class);
+        Mockito.when(session.getPeerCertificates()).thenReturn(null);
+        
+        ProviderHostnameVerifier verifier1 = new ProviderHostnameVerifier("athenz.production");
+        assertFalse(verifier1.verify("athenz", session));
+    }
 }

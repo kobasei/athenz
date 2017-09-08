@@ -27,16 +27,10 @@ public class AWSAttestationData {
     public String signature;
     public String domain;
     public String service;
-    public String name;
     public String account;
-    public String cloud;
-    public String subnet;
     public String access;
     public String secret;
     public String token;
-    public String expires;
-    public String modified;
-    public String flavor;
 
     public void setDocument(String document) {
         this.document = document;
@@ -62,29 +56,11 @@ public class AWSAttestationData {
     public String getService() {
         return service;
     }
-    public void setName(String name) {
-        this.name = name;
-    }
-    public String getName() {
-        return name;
-    }
     public void setAccount(String account) {
         this.account = account;
     }
     public String getAccount() {
         return account;
-    }
-    public void setCloud(String cloud) {
-        this.cloud = cloud;
-    }
-    public String getCloud() {
-        return cloud;
-    }
-    public void setSubnet(String subnet) {
-        this.subnet = subnet;
-    }
-    public String getSubnet() {
-        return subnet;
     }
     public void setAccess(String access) {
         this.access = access;
@@ -103,23 +79,5 @@ public class AWSAttestationData {
     }
     public String getToken() {
         return token;
-    }
-    public void setExpires(String expires) {
-        this.expires = expires;
-    }
-    public String getExpires() {
-        return expires;
-    }
-    public void setModified(String modified) {
-        this.modified = modified;
-    }
-    public String getModified() {
-        return modified;
-    }
-    public void setFlavor(String flavor) {
-        this.flavor = flavor;
-    }
-    public String getFlavor() {
-        return flavor;
     }
 }
